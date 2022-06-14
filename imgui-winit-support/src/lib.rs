@@ -73,11 +73,89 @@
 //! })
 //! ```
 
+#[cfg(feature = "winit-26")]
+use winit_26 as winit;
+
+#[cfg(all(not(any(feature = "winit-26")), feature = "winit-25"))]
+use winit_25 as winit;
+
+#[cfg(all(
+    not(any(feature = "winit-26", feature = "winit-25")),
+    feature = "winit-24"
+))]
+use winit_24 as winit;
+
+#[cfg(all(
+    not(any(feature = "winit-26", feature = "winit-25", feature = "winit-24")),
+    feature = "winit-23"
+))]
+use winit_23 as winit;
+
+#[cfg(all(
+    not(any(
+        feature = "winit-26",
+        feature = "winit-25",
+        feature = "winit-24",
+        feature = "winit-23"
+    )),
+    feature = "winit-22",
+))]
+use winit_22 as winit;
+
+#[cfg(all(
+    not(any(
+        feature = "winit-26",
+        feature = "winit-25",
+        feature = "winit-24",
+        feature = "winit-23",
+        feature = "winit-22"
+    )),
+    feature = "winit-20",
+))]
+use winit_20 as winit;
+
+#[cfg(all(
+    not(any(
+        feature = "winit-26",
+        feature = "winit-25",
+        feature = "winit-24",
+        feature = "winit-23",
+        feature = "winit-22",
+        feature = "winit-20"
+    )),
+    feature = "winit-19",
+))]
+use winit_19 as winit;
+
 use imgui::{self, BackendFlags, ConfigFlags, Context, Io, Key, Ui};
 use std::cell::Cell;
 use std::cmp::Ordering;
 use winit::dpi::{LogicalPosition, LogicalSize};
 
+#[cfg(all(
+    not(any(
+        feature = "winit-26",
+        feature = "winit-25",
+        feature = "winit-24",
+        feature = "winit-23",
+        feature = "winit-22",
+        feature = "winit-20"
+    )),
+    feature = "winit-19",
+))]
+use winit::{
+    DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, MouseCursor, MouseScrollDelta,
+    TouchPhase, VirtualKeyCode, Window, WindowEvent,
+};
+
+#[cfg(any(
+    feature = "winit-26",
+    feature = "winit-25",
+    feature = "winit-24",
+    feature = "winit-23",
+    feature = "winit-22",
+    feature = "winit-20"
+))]
 use winit::{
     error::ExternalError,
     event::{
@@ -86,6 +164,83 @@ use winit::{
     },
     window::{CursorIcon as MouseCursor, Window},
 };
+
+// Ensure at least one is enabled
+#[cfg(not(any(
+    feature = "winit-19",
+    feature = "winit-20",
+    feature = "winit-22",
+    feature = "winit-23",
+    feature = "winit-24",
+    feature = "winit-25",
+    feature = "winit-26",
+)))]
+compile_error!("Please enable at least one version of `winit` (see documentation for details).");
+
+// FIXME(thom): make updading winit and adding a new feature less of a hassle here.
+fn check_multiple_winits() {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    // bail out for release builds or if we've been explicitly disabled.
+    if cfg!(any(not(debug_assertions), feature = "no-warn-on-multiple")) {
+        return;
+    }
+    let winits_enabled = cfg!(feature = "winit-26") as usize
+        + cfg!(feature = "winit-25") as usize
+        + cfg!(feature = "winit-24") as usize
+        + cfg!(feature = "winit-23") as usize
+        + cfg!(feature = "winit-22") as usize
+        + cfg!(feature = "winit-20") as usize
+        + cfg!(feature = "winit-19") as usize;
+
+    // Only complain once even if we're called multiple times.
+    static COMPLAINED: AtomicBool = AtomicBool::new(false);
+    // Note that the `Ordering` basically doesn't matter here, but even if it
+    // did, `Relaxed` is still correct because we're only interested in the
+    // effects on a single atomic variable.
+    if winits_enabled <= 1
+        || COMPLAINED
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        return;
+    }
+    let mut err = Vec::with_capacity(512);
+
+    // Log the complaint into a buffer first — in practice this is enough to
+    // ensure atomicity.
+    let _ = writeln!(
+        err,
+        "Warning (imgui-winit-support): More than one `winit-*` version feature is enabled \
+        (this likely indicates misconfiguration, see documentation for details)."
+    );
+    let feats = [
+        ("winit-26", cfg!(feature = "winit-26"), " (default)"),
+        ("winit-25", cfg!(feature = "winit-25"), ""),
+        ("winit-24", cfg!(feature = "winit-24"), ""),
+        ("winit-23", cfg!(feature = "winit-23"), ""),
+        ("winit-22", cfg!(feature = "winit-22"), ""),
+        ("winit-20", cfg!(feature = "winit-20"), ""),
+        ("winit-19", cfg!(feature = "winit-19"), ""),
+    ];
+    for &(name, enabled, extra) in &feats {
+        if enabled {
+            let _ = writeln!(err, "    `feature = {:?}` is enabled{}", name, extra);
+        }
+    }
+    if cfg!(feature = "winit-25") && winits_enabled == 2 {
+        let _ = writeln!(
+            err,
+            "    Perhaps you are missing a `default-features = false`?",
+        );
+    }
+    let _ = writeln!(
+        err,
+        "    (Note: This warning is only present in debug builds, and \
+        can be disabled using the \"no-warn-on-multiple\" feature)"
+    );
+    let _ = std::io::stderr().write_all(&err);
+}
 
 /// State of a single mouse button. Used so that we can detect cases where mouse
 /// press and release occur on the same frame (seems surprisingly frequent on
