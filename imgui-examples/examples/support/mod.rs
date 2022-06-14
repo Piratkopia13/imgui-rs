@@ -157,8 +157,11 @@ impl System {
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
+                window_id,
                 ..
-            } => *control_flow = ControlFlow::Exit,
+            } if window_id == display.gl_window().window().id() => {
+                *control_flow = ControlFlow::Exit
+            }
             event => {
                 let gl_window = display.gl_window();
                 platform.handle_event(imgui.io_mut(), gl_window.window(), &event);
