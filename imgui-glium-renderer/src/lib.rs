@@ -9,8 +9,8 @@ use glium::uniforms::{
     MagnifySamplerFilter, MinifySamplerFilter, Sampler, SamplerBehavior, SamplerWrapFunction,
 };
 use glium::{
-    program, uniform, vertex, Blend, DrawError, DrawParameters, IndexBuffer, Program, Rect,
-    Surface, Texture2d, VertexBuffer,
+    program, uniform, vertex, Blend, BlendingFunction, DrawError, DrawParameters, IndexBuffer,
+    LinearBlendingFactor, Program, Rect, Surface, Texture2d, VertexBuffer,
 };
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawCmdParams, DrawData, TextureId, Textures};
@@ -113,26 +113,29 @@ impl glium::vertex::Vertex for GliumDrawVert {
     #[inline]
     fn build_bindings() -> glium::vertex::VertexFormat {
         use std::borrow::Cow::*;
-        Borrowed(&[
+        &[
             (
                 Borrowed("pos"),
                 0,
+                -1,
                 glium::vertex::AttributeType::F32F32,
                 false,
             ),
             (
                 Borrowed("uv"),
                 8,
+                -1,
                 glium::vertex::AttributeType::F32F32,
                 false,
             ),
             (
                 Borrowed("col"),
                 16,
+                -1,
                 glium::vertex::AttributeType::U8U8U8U8,
                 false,
             ),
-        ])
+        ]
     }
 }
 
@@ -250,7 +253,13 @@ impl Renderer {
                                     tex: Sampler(texture.texture.as_ref(), texture.sampler)
                                 },
                                 &DrawParameters {
-                                    blend: Blend::alpha_blending(),
+                                    blend: Blend {
+                                        alpha: BlendingFunction::Addition {
+                                            source: LinearBlendingFactor::One,
+                                            destination: LinearBlendingFactor::OneMinusSourceAlpha,
+                                        },
+                                        ..Blend::alpha_blending()
+                                    },
                                     scissor: Some(Rect {
                                         left: f32::max(0.0, clip_rect[0]).floor() as u32,
                                         bottom: f32::max(0.0, fb_height - clip_rect[3]).floor()

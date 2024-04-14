@@ -45,11 +45,14 @@
 //! is sRGB (if you don't know, it probably is) the `internal_format` is
 //! one of the `SRGB*` values.
 
-use std::{borrow::Cow, error::Error, fmt::Display, mem::size_of};
+use std::{borrow::Cow, error::Error, fmt::Display, mem::size_of, num::NonZeroU32, rc::Rc};
 
 use imgui::{internal::RawWrapper, DrawCmd, DrawData, DrawVert};
 
 use crate::versions::{GlVersion, GlslVersion};
+
+// Re-export glow to make it easier for users to use the correct version.
+pub use glow;
 use glow::{Context, HasContext};
 
 pub mod versions;
@@ -58,7 +61,7 @@ pub type GlBuffer = <Context as HasContext>::Buffer;
 pub type GlTexture = <Context as HasContext>::Texture;
 pub type GlVertexArray = <Context as HasContext>::VertexArray;
 type GlProgram = <Context as HasContext>::Program;
-type GlUniformLocation = <Context as HasContext>::Program;
+type GlUniformLocation = <Context as HasContext>::UniformLocation;
 
 /// Renderer which owns the OpenGL context and handles textures itself. Also
 /// converts all output colors to sRGB for display. Useful for simple applications,
@@ -68,7 +71,7 @@ type GlUniformLocation = <Context as HasContext>::Program;
 /// OpenGL context is still available to the rest of the application through
 /// the [`gl_context`](Self::gl_context) method.
 pub struct AutoRenderer {
-    gl: glow::Context,
+    gl: Rc<glow::Context>,
     texture_map: SimpleTextureMap,
     renderer: Renderer,
 }
@@ -84,7 +87,7 @@ impl AutoRenderer {
         let mut texture_map = SimpleTextureMap::default();
         let renderer = Renderer::initialize(&gl, imgui_context, &mut texture_map, true)?;
         Ok(Self {
-            gl,
+            gl: Rc::new(gl),
             texture_map,
             renderer,
         })
@@ -93,7 +96,7 @@ impl AutoRenderer {
     /// Note: no need to provide a `mut` version of this, as all methods on
     /// [`glow::HasContext`] are immutable.
     #[inline]
-    pub fn gl_context(&self) -> &glow::Context {
+    pub fn gl_context(&self) -> &Rc<glow::Context> {
         &self.gl
     }
 
@@ -132,11 +135,11 @@ impl Drop for AutoRenderer {
 pub struct Renderer {
     shaders: Shaders,
     state_backup: GlStateBackup,
-    pub vbo_handle: GlBuffer,
-    pub ebo_handle: GlBuffer,
-    pub font_atlas_texture: GlTexture,
+    pub vbo_handle: Option<GlBuffer>,
+    pub ebo_handle: Option<GlBuffer>,
+    pub font_atlas_texture: Option<GlTexture>,
     #[cfg(feature = "bind_vertex_array_support")]
-    pub vertex_array_object: GlVertexArray,
+    pub vertex_array_object: Option<GlVertexArray>,
     pub gl_version: GlVersion,
     pub has_clip_origin_support: bool,
     pub is_destroyed: bool,
@@ -213,11 +216,11 @@ impl Renderer {
         let out = Self {
             shaders,
             state_backup,
-            vbo_handle,
-            ebo_handle,
-            font_atlas_texture,
+            vbo_handle: Some(vbo_handle),
+            ebo_handle: Some(ebo_handle),
+            font_atlas_texture: Some(font_atlas_texture),
             #[cfg(feature = "bind_vertex_array_support")]
-            vertex_array_object: 0,
+            vertex_array_object: None,
             gl_version,
             has_clip_origin_support,
             is_destroyed: false,
@@ -237,21 +240,21 @@ impl Renderer {
             return;
         }
 
-        if self.vbo_handle != 0 {
-            unsafe { gl.delete_buffer(self.vbo_handle) };
-            self.vbo_handle = 0;
+        if let Some(h) = self.vbo_handle {
+            unsafe { gl.delete_buffer(h) };
+            self.vbo_handle = None;
         }
-        if self.ebo_handle != 0 {
-            unsafe { gl.delete_buffer(self.ebo_handle) };
-            self.ebo_handle = 0;
+        if let Some(h) = self.ebo_handle {
+            unsafe { gl.delete_buffer(h) };
+            self.ebo_handle = None;
         }
-        let program = self.shaders.program;
-        if program != 0 {
-            unsafe { gl.delete_program(program) };
+        if let Some(p) = self.shaders.program {
+            unsafe { gl.delete_program(p) };
+            self.shaders.program = None;
         }
-        if self.font_atlas_texture != 0 {
-            unsafe { gl.delete_texture(self.font_atlas_texture) };
-            self.font_atlas_texture = 0;
+        if let Some(h) = self.font_atlas_texture {
+            unsafe { gl.delete_texture(h) };
+            self.font_atlas_texture = None;
         }
 
         self.is_destroyed = true;
@@ -282,10 +285,11 @@ impl Renderer {
         #[cfg(feature = "bind_vertex_array_support")]
         if self.gl_version.bind_vertex_array_support() {
             unsafe {
-                self.vertex_array_object = gl
-                    .create_vertex_array()
-                    .map_err(|err| format!("Error creating vertex array object: {}", err))?;
-                gl.bind_vertex_array(Some(self.vertex_array_object));
+                self.vertex_array_object = Some(
+                    gl.create_vertex_array()
+                        .map_err(|err| format!("Error creating vertex array object: {}", err))?,
+                );
+                gl.bind_vertex_array(self.vertex_array_object);
             }
         }
 
@@ -330,7 +334,8 @@ impl Renderer {
 
         #[cfg(feature = "bind_vertex_array_support")]
         if self.gl_version.bind_vertex_array_support() {
-            unsafe { gl.delete_vertex_array(self.vertex_array_object) };
+            unsafe { gl.delete_vertex_array(self.vertex_array_object.unwrap()) };
+            self.vertex_array_object = None;
         }
 
         self.state_backup.post_render(gl, self.gl_version);
@@ -395,7 +400,7 @@ impl Renderer {
         let projection_matrix = calculate_matrix(draw_data, clip_origin_is_lower_left);
 
         unsafe {
-            gl.use_program(Some(self.shaders.program));
+            gl.use_program(self.shaders.program);
             gl.uniform_1_i32(Some(&self.shaders.texture_uniform_location), 0);
             gl.uniform_matrix_4_f32_slice(
                 Some(&self.shaders.matrix_uniform_location),
@@ -415,8 +420,8 @@ impl Renderer {
         let color_field_offset = memoffset::offset_of!(DrawVert, col) as _;
 
         unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo_handle));
-            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo_handle));
+            gl.bind_buffer(glow::ARRAY_BUFFER, self.vbo_handle);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, self.ebo_handle);
             gl.enable_vertex_attrib_array(self.shaders.position_attribute_index);
             gl.vertex_attrib_pointer_f32(
                 self.shaders.position_attribute_index,
@@ -562,13 +567,15 @@ pub struct SimpleTextureMap();
 impl TextureMap for SimpleTextureMap {
     #[inline(always)]
     fn register(&mut self, gl_texture: glow::Texture) -> Option<imgui::TextureId> {
-        Some(imgui::TextureId::new(gl_texture as _))
+        Some(imgui::TextureId::new(gl_texture.0.get() as _))
     }
 
     #[inline(always)]
     fn gl_texture(&self, imgui_texture: imgui::TextureId) -> Option<glow::Texture> {
         #[allow(clippy::cast_possible_truncation)]
-        Some(imgui_texture.id() as _)
+        Some(glow::NativeTexture(
+            NonZeroU32::new(imgui_texture.id() as _).unwrap(),
+        ))
     }
 }
 
@@ -599,12 +606,12 @@ impl TextureMap for imgui::Textures<glow::Texture> {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Default)]
 pub struct GlStateBackup {
-    active_texture: i32,
-    program: i32,
-    texture: i32,
+    active_texture: u32,
+    program: u32,
+    texture: u32,
     #[cfg(feature = "bind_sampler_support")]
-    sampler: Option<i32>,
-    array_buffer: i32,
+    sampler: Option<u32>,
+    array_buffer: u32,
     #[cfg(feature = "polygon_mode_support")]
     polygon_mode: Option<[i32; 2]>,
     viewport: [i32; 4],
@@ -623,34 +630,45 @@ pub struct GlStateBackup {
     #[cfg(feature = "primitive_restart_support")]
     primitive_restart_enabled: Option<bool>,
     #[cfg(feature = "bind_vertex_array_support")]
-    vertex_array_object: Option<glow::VertexArray>,
+    vertex_array_object: Option<u32>,
+}
+
+fn to_native_gl<T>(handle: u32, constructor: fn(NonZeroU32) -> T) -> Option<T> {
+    if handle != 0 {
+        Some(constructor(NonZeroU32::new(handle).unwrap()))
+    } else {
+        None
+    }
 }
 
 impl GlStateBackup {
     fn pre_init(&mut self, gl: &Context) {
-        self.texture = unsafe { gl.get_parameter_i32(glow::TEXTURE_BINDING_2D) };
+        self.texture = unsafe { gl.get_parameter_i32(glow::TEXTURE_BINDING_2D) as _ };
     }
 
     fn post_init(&mut self, gl: &Context) {
         #[allow(clippy::cast_sign_loss)]
         unsafe {
-            gl.bind_texture(glow::TEXTURE_2D, Some(self.texture as _));
+            gl.bind_texture(
+                glow::TEXTURE_2D,
+                to_native_gl(self.texture, glow::NativeTexture),
+            );
         }
     }
 
     fn pre_render(&mut self, gl: &Context, gl_version: GlVersion) {
         #[allow(clippy::cast_sign_loss)]
         unsafe {
-            self.active_texture = gl.get_parameter_i32(glow::ACTIVE_TEXTURE);
-            self.program = gl.get_parameter_i32(glow::CURRENT_PROGRAM);
-            self.texture = gl.get_parameter_i32(glow::TEXTURE_BINDING_2D);
+            self.active_texture = gl.get_parameter_i32(glow::ACTIVE_TEXTURE) as _;
+            self.program = gl.get_parameter_i32(glow::CURRENT_PROGRAM) as _;
+            self.texture = gl.get_parameter_i32(glow::TEXTURE_BINDING_2D) as _;
             #[cfg(feature = "bind_sampler_support")]
             if gl_version.bind_sampler_support() {
-                self.sampler = Some(gl.get_parameter_i32(glow::SAMPLER_BINDING));
+                self.sampler = Some(gl.get_parameter_i32(glow::SAMPLER_BINDING) as _);
             } else {
                 self.sampler = None;
             }
-            self.array_buffer = gl.get_parameter_i32(glow::ARRAY_BUFFER_BINDING);
+            self.array_buffer = gl.get_parameter_i32(glow::ARRAY_BUFFER_BINDING) as _;
 
             #[cfg(feature = "bind_vertex_array_support")]
             if gl_version.bind_vertex_array_support() {
@@ -692,18 +710,24 @@ impl GlStateBackup {
     fn post_render(&mut self, gl: &Context, _gl_version: GlVersion) {
         #![allow(clippy::cast_sign_loss)]
         unsafe {
-            gl.use_program(Some(self.program as _));
-            gl.bind_texture(glow::TEXTURE_2D, Some(self.texture as _));
+            gl.use_program(to_native_gl(self.program, glow::NativeProgram));
+            gl.bind_texture(
+                glow::TEXTURE_2D,
+                to_native_gl(self.texture, glow::NativeTexture),
+            );
             #[cfg(feature = "bind_sampler_support")]
             if let Some(sampler) = self.sampler {
-                gl.bind_sampler(0, Some(sampler as _));
+                gl.bind_sampler(0, to_native_gl(sampler, glow::NativeSampler));
             }
             gl.active_texture(self.active_texture as _);
             #[cfg(feature = "bind_vertex_array_support")]
             if let Some(vao) = self.vertex_array_object {
-                gl.bind_vertex_array(Some(vao));
+                gl.bind_vertex_array(to_native_gl(vao, glow::NativeVertexArray));
             }
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.array_buffer as _));
+            gl.bind_buffer(
+                glow::ARRAY_BUFFER,
+                to_native_gl(self.array_buffer, glow::NativeBuffer),
+            );
             gl.blend_equation_separate(
                 self.blend_equation_rgb as _,
                 self.blend_equation_alpha as _,
@@ -771,7 +795,7 @@ impl GlStateBackup {
 /// generate shaders which should work on a wide variety of modern devices
 /// (GL >= 3.3 and GLES >= 2.0 are expected to work).
 struct Shaders {
-    program: GlProgram,
+    program: Option<GlProgram>,
     texture_uniform_location: GlUniformLocation,
     matrix_uniform_location: GlUniformLocation,
     position_attribute_index: u32,
@@ -826,7 +850,7 @@ impl Shaders {
 
         Ok(unsafe {
             Self {
-                program,
+                program: Some(program),
                 texture_uniform_location: gl
                     .get_uniform_location(program, "tex")
                     .ok_or_else(|| ShaderError::UniformNotFound("tex".into()))?,
@@ -1128,7 +1152,7 @@ fn calculate_matrix(draw_data: &DrawData, clip_origin_is_lower_left: bool) -> [f
 }
 
 unsafe fn to_byte_slice<T>(slice: &[T]) -> &[u8] {
-    std::slice::from_raw_parts(slice.as_ptr().cast(), slice.len() * size_of::<T>())
+    std::slice::from_raw_parts(slice.as_ptr().cast(), std::mem::size_of_val(slice))
 }
 
 const fn imgui_index_type_as_gl() -> u32 {

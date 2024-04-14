@@ -164,7 +164,7 @@ impl Ui {
     /// The confusing aspect to popups is that ImGui holds control over the popup itself.
     #[doc(alias = "OpenPopup")]
     pub fn open_popup(&self, str_id: impl AsRef<str>) {
-        unsafe { sys::igOpenPopupStr(self.scratch_txt(str_id), 0) };
+        unsafe { sys::igOpenPopup_Str(self.scratch_txt(str_id), 0) };
     }
 
     /// Construct a popup that can have any kind of content.
@@ -246,6 +246,138 @@ impl Ui {
     #[doc(alias = "CloseCurrentPopup")]
     pub fn close_current_popup(&self) {
         unsafe { sys::igCloseCurrentPopup() };
+    }
+
+    /// Open and begin popup when clicked with the right mouse button on last item.
+    ///
+    /// This does not take a label, which means that multiple calls **in a row** will use the same label, which
+    /// is based on the last node which had a label. Text and other non-interactive elements generally don't have
+    /// ids, so you'll need to use [begin_popup_context_with_label](Self::begin_popup_context_with_label) for them.
+    #[doc(alias = "BeginPopupContextItem")]
+    pub fn begin_popup_context_item(&self) -> Option<PopupToken<'_>> {
+        let render = unsafe {
+            sys::igBeginPopupContextItem(
+                std::ptr::null(),
+                imgui_sys::ImGuiPopupFlags_MouseButtonRight as i32,
+            )
+        };
+
+        if render {
+            Some(PopupToken::new(self))
+        } else {
+            None
+        }
+    }
+
+    /// Open and begin popup when clicked with the right mouse button on the given item with a dedicated label.
+    ///
+    /// If you want to use the label of the previous popup (outside of `Text` and other non-interactive cases, that
+    /// is the more normal case), use [begin_popup_context_item](Self::begin_popup_context_item).
+    #[doc(alias = "BeginPopupContextItem")]
+    pub fn begin_popup_context_with_label<Label: AsRef<str>>(
+        &self,
+        str_id: Label,
+    ) -> Option<PopupToken<'_>> {
+        let render = unsafe {
+            sys::igBeginPopupContextItem(
+                self.scratch_txt(str_id),
+                imgui_sys::ImGuiPopupFlags_MouseButtonRight as i32,
+            )
+        };
+
+        if render {
+            Some(PopupToken::new(self))
+        } else {
+            None
+        }
+    }
+
+    /// Open and begin popup when clicked on current window.
+    ///
+    /// This does not take a label, which means that multiple calls will use the same provided label.
+    /// If you want an explicit label, such as having two different kinds of windows popups in your program,
+    /// use [begin_popup_context_window_with_label](Self::begin_popup_context_window_with_label).
+    #[doc(alias = "BeginPopupContextWindow")]
+    pub fn begin_popup_context_window(&self) -> Option<PopupToken<'_>> {
+        let render = unsafe {
+            sys::igBeginPopupContextWindow(
+                std::ptr::null(),
+                imgui_sys::ImGuiPopupFlags_MouseButtonRight as i32,
+            )
+        };
+
+        if render {
+            Some(PopupToken::new(self))
+        } else {
+            None
+        }
+    }
+
+    /// Open and begin popup when clicked on current window.
+    ///
+    /// This takes a label explicitly. This is useful when multiple code
+    /// locations may want to manipulate/open the same popup, given an explicit id.
+    #[doc(alias = "BeginPopupContextWindow")]
+    pub fn begin_popup_context_window_with_label<Label: AsRef<str>>(
+        &self,
+        str_id: Label,
+    ) -> Option<PopupToken<'_>> {
+        let render = unsafe {
+            sys::igBeginPopupContextWindow(
+                self.scratch_txt(str_id),
+                imgui_sys::ImGuiPopupFlags_MouseButtonRight as i32,
+            )
+        };
+
+        if render {
+            Some(PopupToken::new(self))
+        } else {
+            None
+        }
+    }
+
+    /// Open and begin popup when right clicked in void (where there are no windows).
+    ///
+    /// This does not take a label, which means that multiple calls will use the same provided label.
+    /// If you want an explicit label, such as having two different kinds of void popups in your program,
+    /// use [begin_popup_context_void_with_label](Self::begin_popup_context_void_with_label).
+    #[doc(alias = "BeginPopupContextWindow")]
+    pub fn begin_popup_context_void(&self) -> Option<PopupToken<'_>> {
+        let render = unsafe {
+            sys::igBeginPopupContextVoid(
+                std::ptr::null(),
+                imgui_sys::ImGuiPopupFlags_MouseButtonRight as i32,
+            )
+        };
+
+        if render {
+            Some(PopupToken::new(self))
+        } else {
+            None
+        }
+    }
+
+    /// Open and begin popup when right clicked in void (where there are no windows).
+    ///
+    /// This takes a label explicitly. This is useful when multiple code
+    /// locations may want to manipulate/open the same popup, given an explicit id.
+    #[doc(alias = "BeginPopupContextVoid")]
+    pub fn begin_popup_context_void_with_label<Label: AsRef<str>>(
+        &self,
+        str_id: Label,
+    ) -> Option<PopupToken<'_>> {
+        let render = unsafe {
+            sys::igBeginPopupContextVoid(
+                self.scratch_txt(str_id),
+                imgui_sys::ImGuiPopupFlags_MouseButtonRight as i32,
+            )
+        };
+
+        if render {
+            Some(PopupToken::new(self))
+        } else {
+            None
+        }
     }
 }
 

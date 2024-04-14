@@ -24,7 +24,9 @@ impl UiBuffer {
     /// Internal method to push a single text to our scratch buffer.
     pub fn scratch_txt(&mut self, txt: impl AsRef<str>) -> *const sys::cty::c_char {
         self.refresh_buffer();
-        self.push(txt)
+
+        let start_of_substr = self.push(txt);
+        unsafe { self.offset(start_of_substr) }
     }
 
     /// Internal method to push an option text to our scratch buffer.
@@ -35,15 +37,21 @@ impl UiBuffer {
         }
     }
 
+    /// Helper method, same as [`Self::scratch_txt`] but for two strings
     pub fn scratch_txt_two(
         &mut self,
         txt_0: impl AsRef<str>,
         txt_1: impl AsRef<str>,
     ) -> (*const sys::cty::c_char, *const sys::cty::c_char) {
         self.refresh_buffer();
-        (self.push(txt_0), self.push(txt_1))
+
+        let first_offset = self.push(txt_0);
+        let second_offset = self.push(txt_1);
+
+        unsafe { (self.offset(first_offset), self.offset(second_offset)) }
     }
 
+    /// Helper method, same as [`Self::scratch_txt`] but with one optional value
     pub fn scratch_txt_with_opt(
         &mut self,
         txt_0: impl AsRef<str>,
@@ -56,52 +64,31 @@ impl UiBuffer {
     }
 
     /// Attempts to clear the buffer if it's over the maximum length allowed.
+    /// This is to prevent us from making a giant vec over time.
     pub fn refresh_buffer(&mut self) {
         if self.buffer.len() > self.max_len {
             self.buffer.clear();
         }
     }
 
-    /// Pushes a new scratch sheet text, which means it's not handling any clearing at all.
-    pub fn push(&mut self, txt: impl AsRef<str>) -> *const sys::cty::c_char {
-        unsafe {
-            let len = self.buffer.len();
-            self.buffer.extend(txt.as_ref().as_bytes());
-            self.buffer.push(b'\0');
-
-            self.buffer.as_ptr().add(len) as *const _
-        }
+    /// Given a position, gives an offset from the start of the scatch buffer.
+    ///
+    /// # Safety
+    /// This can return a pointer to undefined data if given a `pos >= self.buffer.len()`.
+    /// This is marked as unsafe to reflect that.
+    pub unsafe fn offset(&self, pos: usize) -> *const sys::cty::c_char {
+        self.buffer.as_ptr().add(pos) as *const _
     }
-}
 
-#[macro_export]
-#[deprecated = "all functions take AsRef<str> now -- use inline strings or `format` instead"]
-macro_rules! im_str {
-    ($e:literal $(,)?) => {{
-        const __INPUT: &str = concat!($e, "\0");
-        {
-            // Trigger a compile error if there's an interior NUL character.
-            const _CHECK_NUL: [(); 0] = [(); {
-                let bytes = __INPUT.as_bytes();
-                let mut i = 0;
-                let mut found_nul = 0;
-                while i < bytes.len() - 1 && found_nul == 0 {
-                    if bytes[i] == 0 {
-                        found_nul = 1;
-                    }
-                    i += 1;
-                }
-                found_nul
-            }];
-            const RESULT: &'static $crate::ImStr = unsafe {
-                $crate::__core::mem::transmute::<&'static [u8], &'static $crate::ImStr>(__INPUT.as_bytes())
-            };
-            RESULT
-        }
-    }};
-    ($e:literal, $($arg:tt)+) => ({
-        $crate::ImString::new(format!($e, $($arg)*))
-    });
+    /// Pushes a new scratch sheet text and return the byte index where the sub-string
+    /// starts.
+    pub fn push(&mut self, txt: impl AsRef<str>) -> usize {
+        let len = self.buffer.len();
+        self.buffer.extend(txt.as_ref().as_bytes());
+        self.buffer.push(b'\0');
+
+        len
+    }
 }
 
 /// A UTF-8 encoded, growable, implicitly nul-terminated string.
@@ -232,7 +219,7 @@ impl ImString {
     }
 }
 
-impl<'a> Default for ImString {
+impl Default for ImString {
     #[inline]
     fn default() -> ImString {
         ImString(vec![b'\0'])

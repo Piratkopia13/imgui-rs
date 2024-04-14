@@ -1,10 +1,52 @@
 # Change Log
 
-## Unreleased
+## [0.11.0] - 2023-04-05
 
-- MSRV is now **1.54**. We soft-updated to this in 0.8.0 with a feature `min-const-generics`, which has now been removed (and as such, we resume having no default features).
+- Added API to add callbacks to draw list for advanced custom drawing - [PR#702](https://github.com/imgui-rs/imgui-rs/pull/702)
+- Added `OwnedDrawData` API for usage like multithreaded renderers - [PR#721](https://github.com/imgui-rs/imgui-rs/pull/721)
+- MSRV bumped to 1.64 (will likely still work in 1.60 with pinning of some indirect dependencies) - [PR#718](https://github.com/imgui-rs/imgui-rs/pull/718)
+- Examples now use `copypasta` crate for clipboard handling, as it is more maintained - [PR#715](https://github.com/imgui-rs/imgui-rs/pull/715)
+- Update glow to 0.12 (from v0.10)- [PR#711](https://github.com/imgui-rs/imgui-rs/pull/711) (and also [PR#712](https://github.com/imgui-rs/imgui-rs/pull/712))
+- Fixed handling of modifiers keys - [PR#710](https://github.com/imgui-rs/imgui-rs/pull/710)
+- There is a new "viewport" renderer which uses the docking branch's multi-viewport handling! - [PR#619](https://github.com/imgui-rs/imgui-rs/pull/619)
+
+## [0.10.0] - 2023-01-16
+
+- Breaking: Removed `im_str!` macro - deprecated since v0.8.
+
+  `ui.button(im_str!("Example"))` just becomes `ui.button("Example")` and `ui.button(&im_str!("My age is {}", 100))` becomes `ui.button!(format!("My age is {}", 100))`
+
+- Breaking: Updated to Dear ImGui 1.89.2.
+
+  This introduces some breaking changes like the `imgui::Key` now contains a full set of keys (previously it was a small subset of to cover copy/paste/undo)
+
+  Also note `Key::KeyPadEnter` was renamed to `KeypadEnter`
+
+- freetype feature can now locate required libraries either via `pkg-config` or `vcpkg`
+
+- Breaking (partially): `ImageButton::new` is now deprecated, replaced by `ui.image_button_config(...)`.
+
+  The old `new` method should be backwards-compatible in most common situations. Exception is if the `ImageButton` builder struct was explicitly specified, say in a method like `fn configure_my_button(button: &mut imgui::ImageButton)` (in which case either change `ImageButton` to `ImageButtonDeprecated`, or update to the new constructor)
+
+- Breaking: `Key`, `StyleColor`, and `StyleVar` enums are now marked [as non-exhaustive](https://doc.rust-lang.org/reference/attributes/type_system.html#the-non_exhaustive-attribute).
+
+- Updated `imgui-winit-support` and `imgui-sdl2-support` to use new "event based IO" (detailed in the Dear ImGui 1.87 release notes, but basically it aims to improve behaviour at low frame rates). Existing custom backends should work without changes, but are advised to update to the new API.
+
+- Accept `usize` and `isize` for parameters which use `DataTypeKind` (such as `Ui::input_scalar`). This treats them as `u64`/`i64` (or `u32`/`i32`) as appropriate
+
+- The `examples` directories have been reorganized slightly.
+
+  There is now an example in `imgui-glium-renderer` showing basic usage, consistent with the glow.
+
+## [0.9.0] - 2022-11-30
+
+- MSRV is now **1.57**. We soft-updated to this to Rust 1.54 in the v0.8.0 release (with a feature `min-const-generics`), which has now been removed (and as such, we resume having no default features). Rust 1.56 is required for the Rust 2021 edition, and 1.57 is required by some dependencies
 
 - Upgraded from Dear ImGui 1.84.2 to 1.86. See [the 1.85](https://github.com/ocornut/imgui/releases/tag/v1.85) and [the 1.86](https://github.com/ocornut/imgui/releases/tag/v1.86) release notes
+
+- Upgraded winit version to `v0.27` for `imgu-winit-support`
+
+- The `imgui-winit-support` and `imgui-glow-renderer` re-export `winit` and `glow` respectively to make setup easier for simple projects. [PR #676](https://github.com/imgui-rs/imgui-rs/pull/676)
 
 - BREAKING: Removed `push_style_colors` and `push_style_vars`. Instead, use `push_style_color` in a loop. This was deprecated in `0.7.0` and should have been removed in `0.8.0`. This also removes their associated tokens.
 
@@ -35,6 +77,10 @@
 - Added `docking` feature which builds against the upstream docking branch. Only basic API is exposed currently, just enough to enable the docking `imgui_context.io_mut().config_flags |= imgui::ConfigFlags::DOCKING_ENABLE;` - a safe API for programtically docking windows and so on will be added later (until then the internal docking API can be accessed, `imgui::sys::igDockBuilderDockWindow` and so on)
 
 - Fixed dpi related issues when not in `HiDpiMode::Default` mode. The wrong scale factor was used when converting winit physical size to logical size, causing the imgui display size to be incorrect.
+
+- Fixed creation of `.crate` (published to crates.io) so required files for freetype feature are included
+
+- Added binding to TextFilter API. [PR #658](https://github.com/imgui-rs/imgui-rs/pull/658)
 
 ## [0.8.0] - 2021-09-17
 
@@ -771,7 +817,9 @@ As mentioned, the 0.6.1 release of `imgui-winit-support` has been yanked.
 
 - Initial release with cimgui/imgui 1.44, glium 0.9
 
-[unreleased]: https://github.com/Gekkio/imgui-rs/compare/v0.8.0...HEAD
+[unreleased]: https://github.com/Gekkio/imgui-rs/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Gekkio/imgui-rs/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/Gekkio/imgui-rs/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Gekkio/imgui-rs/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Gekkio/imgui-rs/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Gekkio/imgui-rs/compare/v0.6.0...v0.6.1

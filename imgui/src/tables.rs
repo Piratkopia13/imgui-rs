@@ -482,7 +482,7 @@ impl Ui {
     pub fn table_set_column_index(&self, column_index: usize) -> bool {
         #[cfg(debug_assertions)]
         {
-            let size = self.table_column_count() as usize;
+            let size = self.table_column_count();
             if column_index >= size {
                 panic!(
                     "column_index >= self.table_get_column_count().\
@@ -629,7 +629,7 @@ impl Ui {
             // imgui uses utf8...though that is a continuous process there.
             cfg_if::cfg_if! {
                 if #[cfg(feature = "docking")] {
-                    CStr::from_ptr(sys::igTableGetColumnNameInt(-1))
+                    CStr::from_ptr(sys::igTableGetColumnName_Int(-1))
                         .to_str()
                         .unwrap()
                 } else {
@@ -650,7 +650,7 @@ impl Ui {
             // imgui uses utf8...though that is a continuous process there.
             cfg_if::cfg_if! {
                 if #[cfg(feature="docking")] {
-                    CStr::from_ptr(sys::igTableGetColumnNameInt(column as i32))
+                    CStr::from_ptr(sys::igTableGetColumnName_Int(column as i32))
                         .to_str()
                         .unwrap()
                 } else {
@@ -760,7 +760,7 @@ pub struct TableColumnSetup<Name> {
     pub user_id: Id,
 }
 
-impl<'a, Name: AsRef<str>> TableColumnSetup<Name> {
+impl<Name: AsRef<str>> TableColumnSetup<Name> {
     pub fn new(name: Name) -> Self {
         Self {
             name,
