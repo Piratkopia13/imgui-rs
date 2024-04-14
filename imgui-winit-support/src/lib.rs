@@ -138,30 +138,6 @@ use winit::{
     platform::modifier_supplement::KeyEventExtModifierSupplement,
 };
 
-#[cfg(all(
-    not(any(
-        feature = "winit-26",
-        feature = "winit-25",
-        feature = "winit-24",
-        feature = "winit-23",
-        feature = "winit-22",
-        feature = "winit-20"
-    )),
-    feature = "winit-19",
-))]
-use winit::{
-    DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, MouseCursor, MouseScrollDelta,
-    TouchPhase, VirtualKeyCode, Window, WindowEvent,
-};
-
-#[cfg(any(
-    feature = "winit-26",
-    feature = "winit-25",
-    feature = "winit-24",
-    feature = "winit-23",
-    feature = "winit-22",
-    feature = "winit-20"
-))]
 use winit::{
     error::ExternalError,
     event::{ElementState, Event, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},
