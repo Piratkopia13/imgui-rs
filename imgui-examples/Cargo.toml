@@ -1,21 +1,25 @@
 [package]
 name = "imgui-examples"
-version = "0.0.0"
-edition = "2018"
-authors = ["The imgui-rs Developers"]
+version = "0.1.0"
+edition = "2021"
 description = "imgui crate examples using Glium backend"
 homepage = "https://github.com/imgui-rs/imgui-rs"
 repository = "https://github.com/imgui-rs/imgui-rs"
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 publish = false
 
 [dev-dependencies]
-clipboard = "0.5"
-glium = { version = "0.31", default-features = true }
+copypasta = "0.8"
+glium = { version = "0.33.0", default-features = true }
 image = "0.23"
 imgui = { path = "../imgui", features = ["tables-api"] }
 imgui-glium-renderer = { path = "../imgui-glium-renderer" }
-imgui-winit-support = { path = "../imgui-winit-support", features=["viewports"] }
+imgui-winit-support = { path = "../imgui-winit-support" }
 
-glow = "0.11.2"
-glutin = "0.28.0"
+# Pin indirect dependency scoped-tls to 1.0.0
+# as 1.0.1 bumped MSRV to 1.59
+# Used only in
+# imgui-examples -> glium -> glutin -> wayland-client -> scoped-tls
+# so not worth bumping MSRV for this basically to keep CI happy
+# FIXME: Remove this for imgui-rs v0.10 and bump MSRV
+scoped-tls = "=1.0.0"

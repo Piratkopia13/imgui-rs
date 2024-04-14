@@ -16,7 +16,7 @@
 use bitflags::bitflags;
 
 use crate::{math::MintVec2, ImColor32};
-use sys::ImDrawList;
+use sys::{ImDrawCmd, ImDrawList};
 
 use super::Ui;
 use crate::render::renderer::TextureId;
@@ -27,7 +27,6 @@ bitflags!(
     /// Options for some DrawList operations.
     #[repr(C)]
     pub struct DrawFlags: u32 {
-        const NONE = sys::ImDrawFlags_None;
         const CLOSED = sys::ImDrawFlags_Closed;
         const ROUND_CORNERS_TOP_LEFT = sys::ImDrawFlags_RoundCornersTopLeft;
         const ROUND_CORNERS_TOP_RIGHT = sys::ImDrawFlags_RoundCornersTopRight;
@@ -46,7 +45,6 @@ bitflags!(
     /// Draw list flags
     #[repr(C)]
     pub struct DrawListFlags: u32 {
-        const NONE = sys::ImDrawListFlags_None;
         /// Enable anti-aliased lines/borders (*2 the number of triangles for 1.0f wide line or lines
         /// thin enough to be drawn using textures, otherwise *3 the number of triangles)
         const ANTI_ALIASED_LINES = sys::ImDrawListFlags_AntiAliasedLines;
@@ -142,7 +140,7 @@ impl<'ui> DrawListMut<'ui> {
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "docking")] {
                         // Has extra overload in docking branch
-                        sys::igGetBackgroundDrawListNil()
+                        sys::igGetBackgroundDrawList_Nil()
                     } else {
                         sys::igGetBackgroundDrawList()
                     }
@@ -161,7 +159,7 @@ impl<'ui> DrawListMut<'ui> {
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "docking")] {
                         // Has extra overload in docking branch
-                        sys::igGetForegroundDrawListNil()
+                        sys::igGetForegroundDrawList_Nil()
                     } else {
                         sys::igGetForegroundDrawList()
                     }
@@ -348,7 +346,7 @@ impl<'ui> DrawListMut<'ui> {
         unsafe {
             let start = text.as_ptr() as *const c_char;
             let end = (start as usize + text.len()) as *const c_char;
-            sys::ImDrawList_AddTextVec2(
+            sys::ImDrawList_AddText_Vec2(
                 self.draw_list,
                 pos.into().into(),
                 col.into().into(),
@@ -467,6 +465,14 @@ impl<'ui> DrawListMut<'ui> {
         rounding: f32,
     ) -> ImageRounded<'_> {
         ImageRounded::new(self, texture_id, p_min, p_max, rounding)
+    }
+
+    /// Draw the specified callback.
+    ///
+    /// Note: if this DrawList is never rendered the callback will leak because DearImGui
+    /// does not provide a method to clean registered callbacks.
+    pub fn add_callback<F: FnOnce() + 'static>(&'ui self, callback: F) -> Callback<'ui, F> {
+        Callback::new(self, callback)
     }
 }
 
@@ -1184,5 +1190,47 @@ impl<'ui> ImageRounded<'ui> {
                 self.draw_flags.bits() as i32,
             );
         }
+    }
+}
+
+#[must_use = "should call .build() to draw the object"]
+pub struct Callback<'ui, F> {
+    draw_list: &'ui DrawListMut<'ui>,
+    callback: F,
+}
+
+impl<'ui, F: FnOnce() + 'static> Callback<'ui, F> {
+    /// Typically constructed by [`DrawListMut::add_callback`]
+    pub fn new(draw_list: &'ui DrawListMut<'_>, callback: F) -> Self {
+        Callback {
+            draw_list,
+            callback,
+        }
+    }
+    /// Adds the callback to the draw-list so it will be run when the window is drawn
+    pub fn build(self) {
+        use std::os::raw::c_void;
+        // F is Sized, so *mut F must be a thin pointer.
+        let callback: *mut F = Box::into_raw(Box::new(self.callback));
+
+        unsafe {
+            sys::ImDrawList_AddCallback(
+                self.draw_list.draw_list,
+                Some(Self::run_callback),
+                callback as *mut c_void,
+            );
+        }
+    }
+    unsafe extern "C" fn run_callback(_parent_list: *const ImDrawList, cmd: *const ImDrawCmd) {
+        // We are modifying through a C const pointer, but that should be harmless.
+        let cmd = &mut *(cmd as *mut ImDrawCmd);
+        // Consume the pointer and leave a NULL behind to avoid a double-free or
+        // calling twice an FnOnce. It should not happen, but better safe than sorry.
+        let callback = std::mem::replace(&mut cmd.UserCallbackData, std::ptr::null_mut());
+        if callback.is_null() {
+            return;
+        }
+        let callback = Box::from_raw(callback as *mut F);
+        callback();
     }
 }

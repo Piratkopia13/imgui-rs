@@ -6,6 +6,13 @@ members = [
     "imgui-glow-renderer",
     "imgui-sdl2-support",
     "imgui-winit-support",
+    "imgui-winit-glow-renderer-viewports",
     "imgui-examples",
     "xtask",
 ]
+
+package.rust-version = "1.70"
+resolver = "2"
+
+[patch.crates-io]
+glium = { git="https://github.com/glium/glium" }
