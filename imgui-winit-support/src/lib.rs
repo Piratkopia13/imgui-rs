@@ -537,8 +537,6 @@ impl WinitPlatform {
                 // https://github.com/ocornut/imgui/issues/5047
                 handle_key_modifier(io, &key, pressed);
 
-                println!("KEY EVENT: {event:?}");
-
                 // Add main key event
                 if let Some(key) = to_imgui_key(key, event.location) {
                     io.add_key_event(key, pressed);
